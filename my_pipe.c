@@ -9,27 +9,27 @@ static int major; //major number
 static ssize_t pipe_read(struct file *f, char __user *buf,
 	size_t count, loff_t *offset)
 {
-	pr_alert("my_pipe read");
+	pr_alert("my_pipe read\n");
 	return 0;
 }
 
 static ssize_t pipe_write(struct file *f, const char __user *buf,
 	size_t count, loff_t *offset)
 {
-	pr_alert("my_pipe write");
+	pr_alert("my_pipe write\n");
 	return 0;
 
 }
 
 static int pipe_open(struct inode *i, struct file *f)
 {
-	pr_alert("my_pipe open");
+	pr_alert("my_pipe open\n");
 	return 0;
 }
 
 static int pipe_release(struct inode *i, struct file *f)
 {
-	pr_alert("my_pipe release");
+	pr_alert("my_pipe release\n");
 	return 0;
 }
 

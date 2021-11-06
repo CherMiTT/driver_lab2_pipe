@@ -7,3 +7,9 @@ all:
 check:
 	cppcheck --enable=all --inconclusive --library=posix my_pipe.c
 	/home/chermi/projects/kernel/linux-stable/scripts/checkpatch.pl -f my_pipe.c
+
+writer:
+	gcc -o writer writer.c
+
+reader:
+	gcc -o reader reader.c
