@@ -7,6 +7,3 @@ all:
 check:
 	cppcheck --enable=all --inconclusive --library=posix my_pipe.c
 	/home/chermi/projects/kernel/linux-stable/scripts/checkpatch.pl -f my_pipe.c
-
-test:
-		

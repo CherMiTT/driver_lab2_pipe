@@ -9,27 +9,27 @@ static int major; //major number
 static ssize_t pipe_read(struct file *f, char __user *buf,
 	size_t count, loff_t *offset)
 {
-	pr_info("my_pipe read");
+	pr_alert("my_pipe read");
 	return 0;
 }
 
 static ssize_t pipe_write(struct file *f, const char __user *buf,
 	size_t count, loff_t *offset)
 {
-	pr_info("my_pipe write");
+	pr_alert("my_pipe write");
 	return 0;
 
 }
 
 static int pipe_open(struct inode *i, struct file *f)
 {
-	pr_info("my_pipe open");
+	pr_alert("my_pipe open");
 	return 0;
 }
 
 static int pipe_release(struct inode *i, struct file *f)
 {
-	pr_info("my_pipe release");
+	pr_alert("my_pipe release");
 	return 0;
 }
 
@@ -43,19 +43,18 @@ static const struct file_operations fops = {
 
 static int __init pipe_init(void)
 {
-	pr_info("Init");
+	pr_alert("Init");
 	major = register_chrdev(0, "my_pipe", &fops);
 	if (major < 0) {
 		pr_crit("failed to register\n");
 		return major;
 	}
-	pr_info("my_pipe assigned major %d\n", major);
+	pr_alert("my_pipe assigned major %d\n", major);
 	return 0;
 }
 
 static void __exit pipe_exit(void)
 {
-	pr_info("Exited");
 	unregister_chrdev(major, "my_pipe");
 }
 
