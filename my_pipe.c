@@ -11,8 +11,9 @@ static int major; //major number
 struct circular_buffer_t {
 	char *buffer;
 	size_t size;
-	size_t read_ptr;
-	size_t write_ptr;
+	size_t read_ptr; //номер следующего байта, который читать
+	size_t write_ptr; //номер следующего байта, куда писать
+	//TODO: change all operations to memcpy based on bytes_avail
 	size_t bytes_avail;
 };
 
@@ -47,15 +48,40 @@ void free_circular_buffer(struct circular_buffer_t *circular_buffer)
 	kfree(circular_buffer);
 }
 
-int read_from_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n)
+int read_from_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n, char *dst)
 {
+	int i;
+	for (i = 0; i < n; ++i) {
+		if (circular_buffer->bytes_avail == circular_buffer->size) {
+			return i;
+		}
+		dst[i] = circular_buffer->buffer[circular_buffer->read_ptr++];
 
-	return 0;
+		if (circular_buffer->read_ptr == circular_buffer->size) {
+			circular_buffer->read_ptr = 0;
+		}
+		//circular_buffer->bytes_avail = circular_buffer->size -
+		//	(circular_buffer->write_ptr - circular_buffer->read_ptr);
+		circular_buffer->bytes_avail++;
+	}
+	return i;
 }
 
-int write_to_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n)
+int write_to_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n, char *src)
 {
+	int i;
+	for (i = 0; i < n; ++i) {
+		if (circular_buffer->bytes_avail == 0) {
+			return i;
+		}
+		circular_buffer->buffer[circular_buffer->write_ptr++] = src[i];
 
+		if (circular_buffer->write_ptr == circular_buffer->size) {
+			circular_buffer->write_ptr = 0;
+		}
+
+		circular_buffer->bytes_avail--;
+	}
 	return 0;
 }
 
