@@ -4,14 +4,60 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>
-//#include <linux/string.h>
+#include <linux/string.h>
 
 static int major; //major number
 
+struct circular_buffer_t {
+	char *buffer;
+	size_t size;
+	size_t read_ptr;
+	size_t write_ptr;
+	size_t bytes_avail;
+};
 
-const size_t BUFFER_SIZE = 1024;
-static char *circular_buffer;
-int read_ptr, write_ptr;
+static struct circular_buffer_t *circular_buffer;
+
+struct circular_buffer_t *allocate_circular_buffer(size_t size)
+{
+	struct circular_buffer_t *buf;
+	buf = kmalloc(sizeof(struct circular_buffer_t), GFP_KERNEL);
+	if (buf == NULL) {
+		pr_err("Could not allocate memory for circular_buffer_t");
+		return NULL;
+	}
+
+	buf->size = size;
+	buf->buffer = kmalloc(size, GFP_KERNEL);
+	if (buf->buffer == NULL) {
+		pr_err("Could not allocate memory for data of circular_buffer_t");
+		kfree(buf);
+		return NULL;
+	}
+
+	buf->read_ptr = 0;
+	buf->write_ptr = 0;
+	buf->bytes_avail = size;
+	return buf;
+}
+
+void free_circular_buffer(struct circular_buffer_t *circular_buffer)
+{
+	kfree(circular_buffer->buffer);
+	kfree(circular_buffer);
+}
+
+int read_from_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n)
+{
+
+	return 0;
+}
+
+int write_to_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n)
+{
+
+	return 0;
+}
 
 
 static ssize_t pipe_read(struct file *f, char __user *buf,
@@ -19,6 +65,9 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 {
 	pr_alert("my_pipe read %lu bytes\n", count);
 
+	//TODO: calculate bytes to copy here
+
+	//unsigned long copied = copy_to_user(buf, circular_buffer, count);
 	return 0;
 }
 
@@ -30,7 +79,7 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 	tmp_buf = kmalloc(count, GFP_KERNEL);
 	//TODO: check memory allocation
 	//TODO: check count against buffer_size, maybe sleep
-	unsigned int copied = copy_from_user(tmp_buf, buf, count);
+	unsigned long copied = copy_from_user(tmp_buf, buf, count);
 	if (copied != 0) {
 		pr_err("Couldn't copy buffer from user in write\n");
 	}
@@ -40,8 +89,8 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 	//TODO: check write_ptr agains buffer_size and add sleep
 	int i;
 	for (i = 0; i < count; ++i) {
-		if (write_ptr < BUFFER_SIZE) {
-			circular_buffer[write_ptr++] = tmp_buf[i];
+		if (circular_buffer->write_ptr < circular_buffer->size) {
+			circular_buffer->buffer[circular_buffer->write_ptr++] = tmp_buf[i];
 		} else {
 			//sleep
 		}
@@ -49,7 +98,7 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 
 	kfree(tmp_buf);
 
-	pr_alert("state of circular_buffer after write is %s\n", circular_buffer);
+	pr_alert("state of circular_buffer after write is %s\n", circular_buffer->buffer);
 	return i;
 }
 
@@ -83,16 +132,15 @@ static int __init pipe_init(void)
 	}
 	pr_alert("my_pipe assigned major %d\n", major);
 
-	circular_buffer = kmalloc(BUFFER_SIZE, GFP_KERNEL);
-	//TODO: check memory allocation
-	read_ptr = write_ptr = 0;
+	//TODO: check result
+	circular_buffer = allocate_circular_buffer(1024);
 
 	return 0;
 }
 
 static void __exit pipe_exit(void)
 {
-	kfree(circular_buffer);
+	free_circular_buffer(circular_buffer);
 	unregister_chrdev(major, "my_pipe");
 }
 

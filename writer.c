@@ -7,8 +7,7 @@
 int main()
 {
 	int f = open("/dev/my_pipe", O_WRONLY);
-	if(f == -1) 
-	{
+	if(f == -1) {
 		printf("couldn't open\n");
 		return -1;
 	}
