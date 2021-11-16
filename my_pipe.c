@@ -5,6 +5,9 @@
 #include <linux/uaccess.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#include <linux/wait.h>
+
+DECLARE_WAIT_QUEUE_HEAD(module_queue);
 
 static int major; //major number
 
@@ -48,9 +51,9 @@ void free_circular_buffer(struct circular_buffer_t *circular_buffer)
 	kfree(circular_buffer);
 }
 
-int read_from_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n, char *dst)
+size_t read_from_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n, char *dst)
 {
-	int i;
+	size_t i;
 	for (i = 0; i < n; ++i) {
 		if (circular_buffer->bytes_avail == circular_buffer->size) {
 			return i;
@@ -67,9 +70,9 @@ int read_from_circular_buffer(struct circular_buffer_t *circular_buffer, size_t 
 	return i;
 }
 
-int write_to_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n, char *src)
+size_t write_to_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n, char *src)
 {
-	int i;
+	size_t i;
 	for (i = 0; i < n; ++i) {
 		if (circular_buffer->bytes_avail == 0) {
 			return i;
@@ -82,7 +85,7 @@ int write_to_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n
 
 		circular_buffer->bytes_avail--;
 	}
-	return 0;
+	return i;
 }
 
 
@@ -91,10 +94,26 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 {
 	pr_alert("my_pipe read %lu bytes\n", count);
 
-	//TODO: calculate bytes to copy here
+	char *tmp_buf;
+	tmp_buf = kmalloc(count, GFP_KERNEL);
+	//TODO: check memory allocation
+	size_t read_bytes = read_from_circular_buffer(circular_buffer, count, tmp_buf);
+	if (read_bytes < count) {
+		pr_alert("Read %lu bytes, wanted to read %lu bytes. Going to sleep\n", read_bytes, count);
+		//TODO: sleep
+		wake_up(&module_queue);		
+		wait_event_interruptible_exclusive(module_queue, circular_buffer->bytes_avail != circular_buffer->size);
+	} else {
+		pr_alert("read_bytes %lu bytes - all we wanted!\n", read_bytes);
+	}
+	pr_info("circular_buffer->bytes_avail = %lu\n", circular_buffer->bytes_avail);
 
-	//unsigned long copied = copy_to_user(buf, circular_buffer, count);
-	return 0;
+	unsigned long copied = copy_to_user(buf, tmp_buf, count);
+	if (copied != 0) {
+		pr_err("Couldn't copy buffer to user in read\n");
+	}
+
+	return read_bytes;
 }
 
 static ssize_t pipe_write(struct file *f, const char __user *buf,
@@ -112,20 +131,21 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 
 	pr_info("write from user: %s\n", tmp_buf);
 
-	//TODO: check write_ptr agains buffer_size and add sleep
-	int i;
-	for (i = 0; i < count; ++i) {
-		if (circular_buffer->write_ptr < circular_buffer->size) {
-			circular_buffer->buffer[circular_buffer->write_ptr++] = tmp_buf[i];
-		} else {
-			//sleep
-		}
+	size_t written_bytes = write_to_circular_buffer(circular_buffer, count, tmp_buf);
+	if (written_bytes < count) {
+		pr_alert("Written %lu bytes, wanted to write %lu bytes. Going to sleep\n", written_bytes, count);
+		//TODO: sleep
+		wake_up(&module_queue);
+		wait_event_interruptible_exclusive(module_queue, circular_buffer->bytes_avail > 0);
+	} else {
+		pr_alert("Written %lu bytes - all we wanted!\n", written_bytes);
 	}
 
 	kfree(tmp_buf);
 
-	pr_alert("state of circular_buffer after write is %s\n", circular_buffer->buffer);
-	return i;
+	pr_alert("state of circular_buffer after write is %s\n", circular_buffer->buffer +
+		circular_buffer->read_ptr);
+	return written_bytes;
 }
 
 static int pipe_open(struct inode *i, struct file *f)
@@ -159,7 +179,7 @@ static int __init pipe_init(void)
 	pr_alert("my_pipe assigned major %d\n", major);
 
 	//TODO: check result
-	circular_buffer = allocate_circular_buffer(1024);
+	circular_buffer = allocate_circular_buffer(10);
 
 	return 0;
 }
