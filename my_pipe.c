@@ -4,6 +4,7 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>
+//#include <linux/string.h>
 
 static int major; //major number
 
@@ -28,12 +29,28 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 	char *tmp_buf;
 	tmp_buf = kmalloc(count, GFP_KERNEL);
 	//TODO: check memory allocation
-	//TODO: check count against buffer_size
-	copy_from_user(tmp_buf, buf, count);
+	//TODO: check count against buffer_size, maybe sleep
+	unsigned int copied = copy_from_user(tmp_buf, buf, count);
+	if (copied != 0) {
+		pr_err("Couldn't copy buffer from user in write\n");
+	}
+
 	pr_info("write from user: %s\n", tmp_buf);
+
+	//TODO: check write_ptr agains buffer_size and add sleep
+	int i;
+	for (i = 0; i < count; ++i) {
+		if (write_ptr < BUFFER_SIZE) {
+			circular_buffer[write_ptr++] = tmp_buf[i];
+		} else {
+			//sleep
+		}
+	}
+
 	kfree(tmp_buf);
 
-	return 0;
+	pr_alert("state of circular_buffer after write is %s\n", circular_buffer);
+	return i;
 }
 
 static int pipe_open(struct inode *i, struct file *f)
