@@ -63,8 +63,7 @@ size_t read_from_circular_buffer(struct circular_buffer_t *circular_buffer, size
 		if (circular_buffer->read_ptr == circular_buffer->size) {
 			circular_buffer->read_ptr = 0;
 		}
-		//circular_buffer->bytes_avail = circular_buffer->size -
-		//	(circular_buffer->write_ptr - circular_buffer->read_ptr);
+
 		circular_buffer->bytes_avail++;
 	}
 	return i;
@@ -97,23 +96,36 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 	char *tmp_buf;
 	tmp_buf = kmalloc(count, GFP_KERNEL);
 	//TODO: check memory allocation
-	size_t read_bytes = read_from_circular_buffer(circular_buffer, count, tmp_buf);
-	if (read_bytes < count) {
-		pr_alert("Read %lu bytes, wanted to read %lu bytes. Going to sleep\n", read_bytes, count);
-		//TODO: sleep
-		wake_up(&module_queue);		
-		wait_event_interruptible_exclusive(module_queue, circular_buffer->bytes_avail != circular_buffer->size);
-	} else {
-		pr_alert("read_bytes %lu bytes - all we wanted!\n", read_bytes);
+	size_t read_bytes_total = 0;
+	while (read_bytes_total < count) {
+		size_t read_bytes_iter = read_from_circular_buffer(circular_buffer,
+			count - read_bytes_total, tmp_buf + read_bytes_total);
+		//TODO: read_bytes_iter used only for debug, either use or remove
+		read_bytes_total += read_bytes_iter;
+		if (read_bytes_total < count) {
+			pr_alert("Read %lu bytes this iteration, %lu bytes total. "
+				"Wanted to read %lu bytes. Going to sleep\n",
+				read_bytes_iter, read_bytes_total, count);
+
+			wake_up(&module_queue);
+			wait_event_interruptible_exclusive(module_queue,
+				circular_buffer->bytes_avail != circular_buffer->size);
+		} else {
+			pr_alert("Read %lu bytes this iteration, %lu bytes total. "
+				"Read all the bytes we wanted!\n",
+				read_bytes_iter, read_bytes_total);
+			wake_up(&module_queue);
+		}
+		pr_info("circular_buffer->bytes_avail = %lu\n", circular_buffer->bytes_avail);
+		pr_info("Raw state of circular_buffer after read is %s\n", circular_buffer->buffer);
 	}
-	pr_info("circular_buffer->bytes_avail = %lu\n", circular_buffer->bytes_avail);
 
 	unsigned long copied = copy_to_user(buf, tmp_buf, count);
 	if (copied != 0) {
 		pr_err("Couldn't copy buffer to user in read\n");
 	}
 
-	return read_bytes;
+	return read_bytes_total;
 }
 
 static ssize_t pipe_write(struct file *f, const char __user *buf,
@@ -127,25 +139,38 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 	unsigned long copied = copy_from_user(tmp_buf, buf, count);
 	if (copied != 0) {
 		pr_err("Couldn't copy buffer from user in write\n");
+		pr_err("Returning 0 to user.\n");
+		return 0;
 	}
 
 	pr_info("write from user: %s\n", tmp_buf);
 
-	size_t written_bytes = write_to_circular_buffer(circular_buffer, count, tmp_buf);
-	if (written_bytes < count) {
-		pr_alert("Written %lu bytes, wanted to write %lu bytes. Going to sleep\n", written_bytes, count);
-		//TODO: sleep
-		wake_up(&module_queue);
-		wait_event_interruptible_exclusive(module_queue, circular_buffer->bytes_avail > 0);
-	} else {
-		pr_alert("Written %lu bytes - all we wanted!\n", written_bytes);
+	size_t written_bytes_total = 0;
+	while (written_bytes_total < count) {
+		size_t written_bytes_iter = write_to_circular_buffer(circular_buffer,
+			count - written_bytes_total, tmp_buf + written_bytes_total);
+		//TODO: written_bytes_iter is used only for debug, either use or remove
+		written_bytes_total += written_bytes_iter;
+		if (written_bytes_total < count) {
+			pr_alert("Written %lu bytes this iteration, %lu bytes total. "
+				"Wanted to write %lu bytes. Going to sleep\n",
+				written_bytes_iter, written_bytes_total, count);
+
+			wake_up(&module_queue);
+			wait_event_interruptible_exclusive(module_queue, circular_buffer->bytes_avail > 0);
+		} else {
+			pr_alert("Written %lu bytes this iteration, %lu bytes total. "
+				"Written all the bytes we wanted!\n",
+				written_bytes_iter, written_bytes_total);
+			wake_up(&module_queue);
+		}
 	}
 
 	kfree(tmp_buf);
 
-	pr_alert("state of circular_buffer after write is %s\n", circular_buffer->buffer +
-		circular_buffer->read_ptr);
-	return written_bytes;
+	pr_info("circular_buffer->bytes_avail = %lu\n", circular_buffer->bytes_avail);
+	pr_info("Raw state of circular_buffer after write is %s\n", circular_buffer->buffer);
+	return written_bytes_total;
 }
 
 static int pipe_open(struct inode *i, struct file *f)
@@ -179,7 +204,7 @@ static int __init pipe_init(void)
 	pr_alert("my_pipe assigned major %d\n", major);
 
 	//TODO: check result
-	circular_buffer = allocate_circular_buffer(10);
+	circular_buffer = allocate_circular_buffer(20);
 
 	return 0;
 }
