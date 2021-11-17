@@ -185,12 +185,18 @@ static int pipe_release(struct inode *i, struct file *f)
 	return 0;
 }
 
+static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
+{
+	pr_alert("my_pipe ioctl; cmd is %d, arg is %lu\n", cmd, arg);
+	return 0;
+}
+
 static const struct file_operations fops = {
 	.read = pipe_read,
 	.write = pipe_write,
 	.open = pipe_open,
 	.release = pipe_release,
-	//.unlocked_ioctl = ,
+	.unlocked_ioctl = pipe_ioctl,
 };
 
 static int __init pipe_init(void)
