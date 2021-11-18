@@ -16,6 +16,10 @@ reader:
 	rm reader
 	gcc -o reader reader.c
 
+ioctl:
+	rm ioctl
+	gcc -o ioctl ioctl.c
+
 load:
 	sudo mknod /dev/my_pipe c 508 0
 	sudo chmod 777 /dev/my_pipe

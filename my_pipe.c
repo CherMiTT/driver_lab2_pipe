@@ -7,6 +7,10 @@
 #include <linux/string.h>
 #include <linux/wait.h>
 
+#include <uapi/asm-generic/ioctl.h>
+
+#include "my_pipe.h"
+
 DECLARE_WAIT_QUEUE_HEAD(module_queue);
 
 static int major; //major number
@@ -188,6 +192,16 @@ static int pipe_release(struct inode *i, struct file *f)
 static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
 	pr_alert("my_pipe ioctl; cmd is %d, arg is %lu\n", cmd, arg);
+
+	switch (cmd) {
+	case WR_CAPCITY: //TODO: placeholder
+		pr_alert("cmd is WR_CAPCITY\n");
+		return 0;
+
+	default:
+		pr_alert("cmd is unknown\n");
+		return -ENOTTY;
+	}
 	return 0;
 }
 
