@@ -31,14 +31,14 @@ struct circular_buffer_t *allocate_circular_buffer(size_t size)
 	struct circular_buffer_t *buf;
 	buf = kmalloc(sizeof(struct circular_buffer_t), GFP_KERNEL);
 	if (buf == NULL) {
-		pr_err("Could not allocate memory for circular_buffer_t");
+		pr_err("Could not allocate memory for circular_buffer_t\n");
 		return NULL;
 	}
 
 	buf->size = size;
 	buf->buffer = kmalloc(size, GFP_KERNEL);
 	if (buf->buffer == NULL) {
-		pr_err("Could not allocate memory for data of circular_buffer_t");
+		pr_err("Could not allocate memory for data of circular_buffer_t\n");
 		kfree(buf);
 		return NULL;
 	}
@@ -180,6 +180,9 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 static int pipe_open(struct inode *i, struct file *f)
 {
 	pr_alert("my_pipe open\n");
+
+	//TODO:
+	//struct pid *this_pid = f->f_owner.pid;
 	return 0;
 }
 
@@ -194,15 +197,24 @@ static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 	pr_alert("my_pipe ioctl; cmd is %d, arg is %lu\n", cmd, arg);
 
 	switch (cmd) {
-	case WR_CAPCITY: //TODO: placeholder
+	case WR_CAPCITY:
 		pr_alert("cmd is WR_CAPCITY\n");
+
+		struct circular_buffer_t *tmp = allocate_circular_buffer(arg);
+		if (circular_buffer == NULL) {
+			pr_err("Could not allocate requested circular buffer in ioctl\n");
+			return -EINVAL;
+		}
+
+		free_circular_buffer(circular_buffer);
+		circular_buffer = tmp;
+		pr_alert("Buffer capacity changed to %lu\n", arg);
 		return 0;
 
 	default:
 		pr_alert("cmd is unknown\n");
 		return -ENOTTY;
 	}
-	return 0;
 }
 
 static const struct file_operations fops = {
