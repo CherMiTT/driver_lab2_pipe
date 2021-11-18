@@ -8,7 +8,8 @@
 int main(int argc, char *argv[])
 {
 	if (argc < 2) {
-		printf("Specify file name");
+		printf("Specify file name\n");
+		return -1;
 	}
 
 	struct stat file_stat;

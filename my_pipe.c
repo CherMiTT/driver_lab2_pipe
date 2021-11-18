@@ -18,10 +18,10 @@ static int major; //major number
 struct circular_buffer_t {
 	char *buffer;
 	size_t size;
-	size_t read_ptr; //номер следующего байта, который читать
-	size_t write_ptr; //номер следующего байта, куда писать
+	ssize_t read_ptr; //номер следующего байта, который читать
+	ssize_t write_ptr; //номер следующего байта, куда писать
 	//TODO: change all operations to memcpy based on bytes_avail
-	size_t bytes_avail;
+	ssize_t bytes_avail;
 };
 
 static struct circular_buffer_t *circular_buffer;
@@ -57,7 +57,7 @@ void free_circular_buffer(struct circular_buffer_t *circular_buffer)
 
 size_t read_from_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n, char *dst)
 {
-	size_t i;
+	ssize_t i;
 	for (i = 0; i < n; ++i) {
 		if (circular_buffer->bytes_avail == circular_buffer->size) {
 			return i;
@@ -75,7 +75,7 @@ size_t read_from_circular_buffer(struct circular_buffer_t *circular_buffer, size
 
 size_t write_to_circular_buffer(struct circular_buffer_t *circular_buffer, size_t n, char *src)
 {
-	size_t i;
+	ssize_t i;
 	for (i = 0; i < n; ++i) {
 		if (circular_buffer->bytes_avail == 0) {
 			return i;
@@ -100,9 +100,9 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 	char *tmp_buf;
 	tmp_buf = kmalloc(count, GFP_KERNEL);
 	//TODO: check memory allocation
-	size_t read_bytes_total = 0;
+	ssize_t read_bytes_total = 0;
 	while (read_bytes_total < count) {
-		size_t read_bytes_iter = read_from_circular_buffer(circular_buffer,
+		ssize_t read_bytes_iter = read_from_circular_buffer(circular_buffer,
 			count - read_bytes_total, tmp_buf + read_bytes_total);
 		//TODO: read_bytes_iter used only for debug, either use or remove
 		read_bytes_total += read_bytes_iter;
@@ -149,9 +149,9 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 
 	pr_info("write from user: %s\n", tmp_buf);
 
-	size_t written_bytes_total = 0;
+	ssize_t written_bytes_total = 0;
 	while (written_bytes_total < count) {
-		size_t written_bytes_iter = write_to_circular_buffer(circular_buffer,
+		ssize_t written_bytes_iter = write_to_circular_buffer(circular_buffer,
 			count - written_bytes_total, tmp_buf + written_bytes_total);
 		//TODO: written_bytes_iter is used only for debug, either use or remove
 		written_bytes_total += written_bytes_iter;
