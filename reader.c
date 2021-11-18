@@ -3,26 +3,35 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-int main()
+int main(int argc, char *argv[])
 {
-	//FILE *file = fopen("dev/my_pipe", "r");
-	int f = open("/dev/my_pipe", O_RDONLY);
-	//if (file == NULL)
-	if(f == -1) {
-		printf("couldn't open\n");
+	if (argc < 2) {
+		printf("Specify amount of bytes to read\n");
 		return -1;
 	}
-	printf("opened\n");
 
-	char buf[12];
-	int r = read(f, buf, 12);
-	//int r = fread();
-	printf("read %d bytes\n", r);
-	printf("read string %s\n", buf);
+	ssize_t bytes = atol(argv[1]);
+	char *data;
+	data = malloc(bytes);
+	if (data == NULL) {
+		printf("Could not allocate memory to read bytes\n");
+		return -1;
+	}
 
-	//fclose(file);
-	close(f);
+	int my_pipe = open("/dev/my_pipe", O_RDONLY);
+	if(my_pipe == -1) {
+		printf("Could not open my_pipe\n");
+		return -1;
+	}
+	printf("Opened my_pipe\n");
+
+	int r = read(my_pipe, data, bytes);
+	printf("Read %d bytes\n", r);
+	printf("Read string %s\n", data);
+
+	close(my_pipe);
 	printf("closed\n");
 	return 0;
 }
