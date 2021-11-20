@@ -15,20 +15,6 @@
 DECLARE_WAIT_QUEUE_HEAD(module_queue);
 DEFINE_MUTEX(mutex);
 
-// struct circular_buffer_t;
-// struct circular_buffer_t *allocate_circular_buffer(ssize_t);
-// void free_circular_buffer(struct circular_buffer_t *);
-// size_t read_from_circular_buffer(struct circular_buffer_t *, ssize_t, char *);
-// size_t write_to_circular_buffer(struct circular_buffer_t *, ssize_t, char *);
-
-// static ssize_t pipe_read(struct file *, char __user *, size_t, loff_t *);
-// static ssize_t pipe_write(struct file *, const char __user *, size_t , loff_t *);
-// static int pipe_open(struct inode *, struct file *);
-// static int pipe_release(struct inode *, struct file *);
-// static long pipe_ioctl(struct file *, unsigned int, unsigned long);
-// static int __init pipe_init(void);
-// static void __exit pipe_exit(void);
-
 static int major; //major number
 
 struct circular_buffer_t {
@@ -42,7 +28,7 @@ struct circular_buffer_t {
 
 static struct circular_buffer_t *circular_buffer;
 
-struct circular_buffer_t *allocate_circular_buffer(ssize_t size)
+static struct circular_buffer_t *allocate_circular_buffer(ssize_t size)
 {
 	struct circular_buffer_t *buf;
 
@@ -66,13 +52,13 @@ struct circular_buffer_t *allocate_circular_buffer(ssize_t size)
 	return buf;
 }
 
-void free_circular_buffer(struct circular_buffer_t *circular_buffer)
+static void free_circular_buffer(struct circular_buffer_t *circular_buffer)
 {
 	kfree(circular_buffer->buffer);
 	kfree(circular_buffer);
 }
 
-size_t read_from_circular_buffer(struct circular_buffer_t *circular_buffer, ssize_t n, char *dst)
+static size_t read_from_circular_buffer(struct circular_buffer_t *circular_buffer, ssize_t n, char *dst)
 {
 	ssize_t i;
 
@@ -89,7 +75,7 @@ size_t read_from_circular_buffer(struct circular_buffer_t *circular_buffer, ssiz
 	return i;
 }
 
-size_t write_to_circular_buffer(struct circular_buffer_t *circular_buffer, ssize_t n, char *src)
+static size_t write_to_circular_buffer(struct circular_buffer_t *circular_buffer, ssize_t n, char *src)
 {
 	ssize_t i;
 
@@ -119,7 +105,11 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 	pr_alert("my_pipe read %lu bytes\n", count);
 	pr_alert("Locking mutex");
 	//TODO: check return values in all locks
-	mutex_lock_interruptible(&mutex);
+	res = mutex_lock_interruptible(&mutex);
+	if (res != 0) {
+		pr_err("Mutex interrupted with return value %d\n", res);
+		return read_bytes_total;
+	}
 
 	while (read_bytes_total < count) {
 		ssize_t read_bytes_iter = read_from_circular_buffer(circular_buffer,
@@ -141,7 +131,11 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 			}
 
 			pr_alert("Woke up in read, locking mutex\n");
-			mutex_lock_interruptible(&mutex);
+			res = mutex_lock_interruptible(&mutex);
+			if (res != 0) {
+				pr_err("Mutex interrupted with return value %d\n", res);
+				return read_bytes_total;
+			}
 		} else {
 			pr_alert("Read %lu bytes this iteration, %lu bytes total.\n\t"
 				"Read all the bytes we wanted! Unlocking mutex\n",
@@ -180,7 +174,11 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 
 	pr_alert("Locking mutex");
 	//TODO: check return values in all locks
-	mutex_lock_interruptible(&mutex);
+	res = mutex_lock_interruptible(&mutex);
+	if (res != 0) {
+		pr_err("Mutex interrupted with return value %d\n", res);
+		return written_bytes_total;
+	}
 
 	while (written_bytes_total < count) {
 		ssize_t written_bytes_iter = write_to_circular_buffer(circular_buffer,
@@ -201,7 +199,11 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 			}
 
 			pr_alert("Woke up in write, locking mutex\n");
-			mutex_lock_interruptible(&mutex);
+			res = mutex_lock_interruptible(&mutex);
+			if (res != 0) {
+				pr_err("Mutex interrupted with return value %d\n", res);
+				return written_bytes_total;
+			}
 		} else {
 			pr_alert("Written %lu bytes this iteration, %lu bytes total.\n\t"
 				"Written all the bytes we wanted! Unlocking mutex\n",
@@ -222,7 +224,7 @@ static int pipe_open(struct inode *i, struct file *f)
 {
 	pr_alert("my_pipe open\n");
 
-	//TODO:
+	//TODO: for identifiying process in the future
 	//struct pid *this_pid = f->f_owner.pid;
 	return 0;
 }
@@ -236,9 +238,9 @@ static int pipe_release(struct inode *i, struct file *f)
 static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
 	struct circular_buffer_t *tmp;
+	int res;
 
 	pr_alert("my_pipe ioctl; cmd is %d, arg is %lu\n", cmd, arg);
-
 
 	switch (cmd) {
 	case WR_CAPCITY:
@@ -246,11 +248,14 @@ static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 
 		if (circular_buffer == NULL) {
 			pr_err("Could not allocate requested circular buffer in ioctl\n");
-			mutex_unlock(&mutex);
 			return -EINVAL;
 		}
 
-		mutex_lock_interruptible(&mutex);
+		res = mutex_lock_interruptible(&mutex);
+		if (res != 0) {
+			pr_err("Mutex interrupted with return value %d\n", res);
+			return -EINVAL;
+		}
 
 		if (circular_buffer->bytes_avail < circular_buffer->size) {
 			pr_alert("Circular buffer is not empty, could not change capacity");
