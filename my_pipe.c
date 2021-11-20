@@ -135,7 +135,7 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 			mutex_unlock(&mutex);
 			res = wait_event_interruptible_exclusive(module_queue,
 				circular_buffer->bytes_avail != circular_buffer->size);
-			if (res != 0) {
+			if (res == -ERESTARTSYS) {
 				pr_err("Sleep interrupted with return value %d\n", res);
 				return read_bytes_total;
 			}
@@ -195,7 +195,7 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 			wake_up(&module_queue);
 			mutex_unlock(&mutex);
 			res = wait_event_interruptible_exclusive(module_queue, circular_buffer->bytes_avail > 0);
-			if (res != 0) {
+			if (res == -ERESTARTSYS) {
 				pr_err("Sleep interrupted with return value %d\n", res);
 				return written_bytes_total;
 			}
@@ -239,19 +239,31 @@ static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 
 	pr_alert("my_pipe ioctl; cmd is %d, arg is %lu\n", cmd, arg);
 
+
 	switch (cmd) {
 	case WR_CAPCITY:
-		tmp = allocate_circular_buffer(arg);
-
 		pr_alert("cmd is WR_CAPCITY\n");
+
 		if (circular_buffer == NULL) {
 			pr_err("Could not allocate requested circular buffer in ioctl\n");
+			mutex_unlock(&mutex);
 			return -EINVAL;
 		}
+
+		mutex_lock_interruptible(&mutex);
+
+		if (circular_buffer->bytes_avail < circular_buffer->size) {
+			pr_alert("Circular buffer is not empty, could not change capacity");
+			mutex_unlock(&mutex);
+			return -EINVAL;
+		}
+
+		tmp = allocate_circular_buffer(arg);
 
 		free_circular_buffer(circular_buffer);
 		circular_buffer = tmp;
 		pr_alert("Buffer capacity changed to %lu\n", arg);
+		mutex_unlock(&mutex);
 		return 0;
 
 	default:
