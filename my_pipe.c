@@ -6,12 +6,14 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/wait.h>
+#include <linux/mutex.h>
 
 #include <uapi/asm-generic/ioctl.h>
 
 #include "my_pipe.h"
 
 DECLARE_WAIT_QUEUE_HEAD(module_queue);
+DEFINE_MUTEX(mutex);
 
 // struct circular_buffer_t;
 // struct circular_buffer_t *allocate_circular_buffer(ssize_t);
@@ -114,6 +116,9 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 	unsigned long copied; //number of bytes copied to user
 
 	pr_alert("my_pipe read %lu bytes\n", count);
+	pr_alert("Locking mutex");
+	//TODO: check return values in all locks
+	mutex_lock_interruptible(&mutex);
 
 	while (read_bytes_total < count) {
 		ssize_t read_bytes_iter = read_from_circular_buffer(circular_buffer,
@@ -122,17 +127,21 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 		read_bytes_total += read_bytes_iter;
 		if (read_bytes_total < count) {
 			pr_alert("Read %lu bytes this iteration, %lu bytes total.\n\t"
-				"Wanted to read %lu bytes. Going to sleep\n",
+				"Wanted to read %lu bytes. Unlocking mutex, going to sleep\n",
 				read_bytes_iter, read_bytes_total, count);
 
 			wake_up(&module_queue);
+			mutex_unlock(&mutex);
 			wait_event_interruptible_exclusive(module_queue,
 				circular_buffer->bytes_avail != circular_buffer->size);
+			pr_alert("Woke up in read, locking mutex\n");
+			mutex_lock_interruptible(&mutex);
 		} else {
 			pr_alert("Read %lu bytes this iteration, %lu bytes total.\n\t"
-				"Read all the bytes we wanted!\n",
+				"Read all the bytes we wanted! Unlocking mutex\n",
 				read_bytes_iter, read_bytes_total);
 			wake_up(&module_queue);
+			mutex_unlock(&mutex);
 		}
 		pr_info("circular_buffer->bytes_avail = %lu\n", circular_buffer->bytes_avail);
 		pr_info("Raw state of circular_buffer after read is %s\n", circular_buffer->buffer);
@@ -151,7 +160,6 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 	char *tmp_buf = kmalloc(count, GFP_KERNEL);
 	//TODO: check memory allocation
 	unsigned long copied = copy_from_user(tmp_buf, buf, count);
-	//TODO: check count against buffer_size, maybe sleep
 	ssize_t written_bytes_total = 0;
 
 	pr_alert("my_pipe write %lu bytes\n", count);
@@ -163,6 +171,10 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 
 	pr_info("write from user: %s\n", tmp_buf);
 
+	pr_alert("Locking mutex");
+	//TODO: check return values in all locks
+	mutex_lock_interruptible(&mutex);
+
 	while (written_bytes_total < count) {
 		ssize_t written_bytes_iter = write_to_circular_buffer(circular_buffer,
 			count - written_bytes_total, tmp_buf + written_bytes_total);
@@ -170,16 +182,18 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 		written_bytes_total += written_bytes_iter;
 		if (written_bytes_total < count) {
 			pr_alert("Written %lu bytes this iteration, %lu bytes total.\n\t"
-				"Wanted to write %lu bytes. Going to sleep\n",
+				"Wanted to write %lu bytes. Unlocking mutex, going to sleep\n",
 				written_bytes_iter, written_bytes_total, count);
 
 			wake_up(&module_queue);
+			mutex_unlock(&mutex);
 			wait_event_interruptible_exclusive(module_queue, circular_buffer->bytes_avail > 0);
 		} else {
 			pr_alert("Written %lu bytes this iteration, %lu bytes total.\n\t"
-				"Written all the bytes we wanted!\n",
+				"Written all the bytes we wanted! Unlocking mutex\n",
 				written_bytes_iter, written_bytes_total);
 			wake_up(&module_queue);
+			mutex_unlock(&mutex);
 		}
 	}
 
@@ -251,7 +265,7 @@ static int __init pipe_init(void)
 	pr_alert("my_pipe assigned major %d\n", major);
 
 	//TODO: check result
-	circular_buffer = allocate_circular_buffer(20);
+	circular_buffer = allocate_circular_buffer(1000);
 
 	return 0;
 }
