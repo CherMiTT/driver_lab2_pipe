@@ -114,6 +114,7 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 	//TODO: check memory allocation
 	ssize_t read_bytes_total = 0;
 	unsigned long copied; //number of bytes copied to user
+	int res;
 
 	pr_alert("my_pipe read %lu bytes\n", count);
 	pr_alert("Locking mutex");
@@ -132,8 +133,13 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 
 			wake_up(&module_queue);
 			mutex_unlock(&mutex);
-			wait_event_interruptible_exclusive(module_queue,
+			res = wait_event_interruptible_exclusive(module_queue,
 				circular_buffer->bytes_avail != circular_buffer->size);
+			if (res != 0) {
+				pr_err("Sleep interrupted with return value %d\n", res);
+				return read_bytes_total;
+			}
+
 			pr_alert("Woke up in read, locking mutex\n");
 			mutex_lock_interruptible(&mutex);
 		} else {
@@ -161,6 +167,7 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 	//TODO: check memory allocation
 	unsigned long copied = copy_from_user(tmp_buf, buf, count);
 	ssize_t written_bytes_total = 0;
+	int res;
 
 	pr_alert("my_pipe write %lu bytes\n", count);
 	if (copied != 0) {
@@ -187,7 +194,14 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 
 			wake_up(&module_queue);
 			mutex_unlock(&mutex);
-			wait_event_interruptible_exclusive(module_queue, circular_buffer->bytes_avail > 0);
+			res = wait_event_interruptible_exclusive(module_queue, circular_buffer->bytes_avail > 0);
+			if (res != 0) {
+				pr_err("Sleep interrupted with return value %d\n", res);
+				return written_bytes_total;
+			}
+
+			pr_alert("Woke up in write, locking mutex\n");
+			mutex_lock_interruptible(&mutex);
 		} else {
 			pr_alert("Written %lu bytes this iteration, %lu bytes total.\n\t"
 				"Written all the bytes we wanted! Unlocking mutex\n",
