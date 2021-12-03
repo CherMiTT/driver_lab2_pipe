@@ -23,8 +23,8 @@ static int gid_cmp(const void *_a, const void *_b)
 	return gid_gt(a, b) - gid_lt(a, b);
 }
 
-DECLARE_WAIT_QUEUE_HEAD(module_queue);
-DEFINE_MUTEX(mutex);
+//DECLARE_WAIT_QUEUE_HEAD(module_queue);
+//DEFINE_MUTEX(mutex);
 
 const size_t BUF_SIZE = 1000;
 
@@ -37,10 +37,9 @@ struct circular_buffer_t {
 	ssize_t write_ptr; //номер следующего байта, куда писать
 	//TODO: change all operations to memcpy based on bytes_avail
 	ssize_t bytes_avail;
-	struct mutex *lock;
+	struct mutex lock;
+	wait_queue_head_t queue;
 };
-
-//static struct circular_buffer_t *circular_buffer;
 
 struct assoc_arr_gid_buf_t {
 	size_t n;
@@ -72,6 +71,8 @@ static struct circular_buffer_t *allocate_circular_buffer(ssize_t size)
 	buf->read_ptr = 0;
 	buf->write_ptr = 0;
 	buf->bytes_avail = size;
+	mutex_init(&buf->lock);
+	init_waitqueue_head(&buf->queue);
 	return buf;
 }
 
@@ -144,7 +145,7 @@ static void free_assoc_arr_buf_gid(void)
 }
 
 /* Function reallocates memory in assoc_arr_gid_buf_t for one new buffer.
- *   Returns pointer to new buffer on success, NULL on failure.
+ * Returns pointer to new buffer on success, NULL on failure.
  */
 static struct circular_buffer_t *add_new_buffer(kgid_t gid)
 {
@@ -174,7 +175,7 @@ static struct circular_buffer_t *add_new_buffer(kgid_t gid)
 }
 
 /* Finds struct circular_buffer_t in assoc_arr_gid_buf_t by kgid_t.
- *  Returns pointer to struct circular_buffer_t if found, NULL if not.
+ * Returns pointer to struct circular_buffer_t if found, NULL if not.
  */
 static struct circular_buffer_t *find_buffer(kgid_t gid)
 {
@@ -202,7 +203,7 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 	pr_alert("my_pipe read %lu bytes\n", count);
 	pr_alert("Locking mutex");
 	//TODO: check return values in all locks
-	res = mutex_lock_interruptible(&mutex);
+	res = mutex_lock_interruptible(&circ_buf->lock);
 	if (res != 0) {
 		pr_err("Mutex interrupted with return value %d\n", res);
 		return read_bytes_total;
@@ -218,9 +219,9 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 				"Wanted to read %lu bytes. Unlocking mutex, going to sleep\n",
 				read_bytes_iter, read_bytes_total, count);
 
-			wake_up(&module_queue);
-			mutex_unlock(&mutex);
-			res = wait_event_interruptible_exclusive(module_queue,
+			wake_up(&circ_buf->queue);
+			mutex_unlock(&circ_buf->lock);
+			res = wait_event_interruptible_exclusive(circ_buf->queue,
 				circ_buf->bytes_avail != circ_buf->size);
 			if (res == -ERESTARTSYS) {
 				pr_err("Sleep interrupted with return value %d\n", res);
@@ -228,7 +229,7 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 			}
 
 			pr_alert("Woke up in read, locking mutex\n");
-			res = mutex_lock_interruptible(&mutex);
+			res = mutex_lock_interruptible(&circ_buf->lock);
 			if (res != 0) {
 				pr_err("Mutex interrupted with return value %d\n", res);
 				return read_bytes_total;
@@ -237,8 +238,8 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 			pr_alert("Read %lu bytes this iteration, %lu bytes total.\n\t"
 				"Read all the bytes we wanted! Unlocking mutex\n",
 				read_bytes_iter, read_bytes_total);
-			wake_up(&module_queue);
-			mutex_unlock(&mutex);
+			wake_up(&circ_buf->queue);
+			mutex_unlock(&circ_buf->lock);
 		}
 		pr_info("circular_buffer->bytes_avail = %lu\n", circ_buf->bytes_avail);
 		pr_info("Raw state of circular_buffer after read is %s\n", circ_buf->buffer);
@@ -273,7 +274,7 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 
 	pr_alert("Locking mutex");
 	//TODO: check return values in all locks
-	res = mutex_lock_interruptible(&mutex);
+	res = mutex_lock_interruptible(&circ_buf->lock);
 	if (res != 0) {
 		pr_err("Mutex interrupted with return value %d\n", res);
 		return written_bytes_total;
@@ -289,16 +290,16 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 				"Wanted to write %lu bytes. Unlocking mutex, going to sleep\n",
 				written_bytes_iter, written_bytes_total, count);
 
-			wake_up(&module_queue);
-			mutex_unlock(&mutex);
-			res = wait_event_interruptible_exclusive(module_queue, circ_buf->bytes_avail > 0);
+			wake_up(&circ_buf->queue);
+			mutex_unlock(&circ_buf->lock);
+			res = wait_event_interruptible_exclusive(circ_buf->queue, circ_buf->bytes_avail > 0);
 			if (res == -ERESTARTSYS) {
 				pr_err("Sleep interrupted with return value %d\n", res);
 				return written_bytes_total;
 			}
 
 			pr_alert("Woke up in write, locking mutex\n");
-			res = mutex_lock_interruptible(&mutex);
+			res = mutex_lock_interruptible(&circ_buf->lock);
 			if (res != 0) {
 				pr_err("Mutex interrupted with return value %d\n", res);
 				return written_bytes_total;
@@ -307,8 +308,8 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 			pr_alert("Written %lu bytes this iteration, %lu bytes total.\n\t"
 				"Written all the bytes we wanted! Unlocking mutex\n",
 				written_bytes_iter, written_bytes_total);
-			wake_up(&module_queue);
-			mutex_unlock(&mutex);
+			wake_up(&circ_buf->queue);
+			mutex_unlock(&circ_buf->lock);
 		}
 	}
 
@@ -364,15 +365,16 @@ static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 			return -EINVAL;
 		}
 
-		res = mutex_lock_interruptible(&mutex);
+		res = mutex_lock_interruptible(&circ_buf->lock);
 		if (res != 0) {
 			pr_err("Mutex interrupted with return value %d\n", res);
+			mutex_unlock(&circ_buf->lock);
 			return -EINVAL;
 		}
 
 		if (circ_buf->bytes_avail < circ_buf->size) {
 			pr_alert("Circular buffer is not empty, could not change capacity");
-			mutex_unlock(&mutex);
+			mutex_unlock(&circ_buf->lock);
 			return -EINVAL;
 		}
 
@@ -386,7 +388,7 @@ static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 		}
 
 		pr_alert("Buffer capacity changed to %lu\n", arg);
-		mutex_unlock(&mutex);
+		mutex_unlock(&circ_buf->lock);
 		return 0;
 
 	default:
