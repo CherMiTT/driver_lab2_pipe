@@ -23,8 +23,7 @@ static int gid_cmp(const void *_a, const void *_b)
 	return gid_gt(a, b) - gid_lt(a, b);
 }
 
-//DECLARE_WAIT_QUEUE_HEAD(module_queue);
-//DEFINE_MUTEX(mutex);
+DEFINE_MUTEX(assoc_arr_mutex);
 
 const size_t BUF_SIZE = 1000;
 
@@ -120,21 +119,37 @@ static size_t write_to_circular_buffer(struct circular_buffer_t *circular_buffer
 static struct assoc_arr_gid_buf_t *allocate_assoc_arr_buf_gid(void)
 {
 	struct assoc_arr_gid_buf_t *arr;
+	int res = mutex_lock_interruptible(&assoc_arr_mutex);
+
+	if (res != 0) {
+		pr_err("Mutex interrupted with return value %d\n", res);
+		mutex_unlock(&assoc_arr_mutex);
+		return NULL;
+	}
 
 	arr = kmalloc(sizeof(struct assoc_arr_gid_buf_t), GFP_KERNEL);
 	if (arr == NULL) {
 		//pr_err("Could not allocate memory for assoc_arr_gid_buf_t\n");
+		mutex_unlock(&assoc_arr_mutex);
 		return NULL;
 	}
 	arr->n = 0;
 	arr->buf_arr = NULL;
 	arr->gid_arr = NULL;
+	mutex_unlock(&assoc_arr_mutex);
 	return arr;
 }
 
 static void free_assoc_arr_buf_gid(void)
 {
 	int i;
+	int res = mutex_lock_interruptible(&assoc_arr_mutex);
+
+	if (res != 0) {
+		pr_err("Mutex interrupted with return value %d\n", res);
+		mutex_unlock(&assoc_arr_mutex);
+		return;
+	}
 
 	for (i = 0; i < buffers->n; i++)
 		free_circular_buffer(buffers->buf_arr[i]);
@@ -142,6 +157,7 @@ static void free_assoc_arr_buf_gid(void)
 	kfree(buffers->buf_arr);
 	kfree(buffers->gid_arr);
 	kfree(buffers);
+	mutex_unlock(&assoc_arr_mutex);
 }
 
 /* Function reallocates memory in assoc_arr_gid_buf_t for one new buffer.
@@ -149,19 +165,28 @@ static void free_assoc_arr_buf_gid(void)
  */
 static struct circular_buffer_t *add_new_buffer(kgid_t gid)
 {
+	int res = mutex_lock_interruptible(&assoc_arr_mutex);
 	struct circular_buffer_t **tmp_buf_arr;
 	kgid_t *tmp_gid_arr;
 	size_t new_size = ((buffers->n) + 1);
 
+	if (res != 0) {
+		pr_err("Mutex interrupted with return value %d\n", res);
+		mutex_unlock(&assoc_arr_mutex);
+		return NULL;
+	}
+
 	tmp_buf_arr = krealloc(buffers->buf_arr, new_size * sizeof(struct circular_buffer_t *), GFP_KERNEL);
 	if (tmp_buf_arr == NULL) {
 		pr_err("Could not reallocate memory for assoc_arr_gid_buf_t->buf_arr\n");
+		mutex_unlock(&assoc_arr_mutex);
 		return NULL;
 	}
 
 	tmp_gid_arr = krealloc(buffers->gid_arr, new_size * sizeof(kgid_t), GFP_KERNEL);
 	if (tmp_gid_arr == NULL) {
 		pr_err("Could not reallocate memory for assoc_arr_gid_buf_t->tmp_gid_arr\n");
+		mutex_unlock(&assoc_arr_mutex);
 		return NULL;
 	}
 
@@ -171,6 +196,7 @@ static struct circular_buffer_t *add_new_buffer(kgid_t gid)
 	buffers->buf_arr = tmp_buf_arr;
 	buffers->gid_arr = tmp_gid_arr;
 	buffers->n++;
+	mutex_unlock(&assoc_arr_mutex);
 	return buffers->buf_arr[new_size-1];
 }
 
@@ -180,13 +206,23 @@ static struct circular_buffer_t *add_new_buffer(kgid_t gid)
 static struct circular_buffer_t *find_buffer(kgid_t gid)
 {
 	int i;
+	int res = mutex_lock_interruptible(&assoc_arr_mutex);
+
+	if (res != 0) {
+		pr_err("Mutex interrupted with return value %d\n", res);
+		mutex_unlock(&assoc_arr_mutex);
+		return NULL;
+	}
+	pr_alert("1\n");
 
 	for (i = 0; i < buffers->n; i++) {
 		if (gid_cmp((void *)&gid, (void *)&buffers->gid_arr[i]) == 0) {
 			pr_alert("Found matching kgid! At index %d\n", i);
+			mutex_unlock(&assoc_arr_mutex);
 			return buffers->buf_arr[i];
 		}
 	}
+	mutex_unlock(&assoc_arr_mutex);
 	return NULL;
 }
 
