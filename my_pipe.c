@@ -14,9 +14,7 @@
 
 #include "my_pipe.h"
 
-//*****************************
 //Stolen from https://elixir.bootlin.com/linux/v5.10/source/kernel/groups.c#L81
-
 static int gid_cmp(const void *_a, const void *_b)
 {
 	kgid_t a = *(kgid_t *)_a;
@@ -24,8 +22,6 @@ static int gid_cmp(const void *_a, const void *_b)
 
 	return gid_gt(a, b) - gid_lt(a, b);
 }
-
-//*****************************
 
 DECLARE_WAIT_QUEUE_HEAD(module_queue);
 DEFINE_MUTEX(mutex);
@@ -41,6 +37,7 @@ struct circular_buffer_t {
 	ssize_t write_ptr; //номер следующего байта, куда писать
 	//TODO: change all operations to memcpy based on bytes_avail
 	ssize_t bytes_avail;
+	struct mutex *lock;
 };
 
 //static struct circular_buffer_t *circular_buffer;
@@ -119,7 +116,8 @@ static size_t write_to_circular_buffer(struct circular_buffer_t *circular_buffer
 	return i;
 }
 
-static struct assoc_arr_gid_buf_t *allocate_assoc_arr_buf_gid(void) {
+static struct assoc_arr_gid_buf_t *allocate_assoc_arr_buf_gid(void)
+{
 	struct assoc_arr_gid_buf_t *arr;
 
 	arr = kmalloc(sizeof(struct assoc_arr_gid_buf_t), GFP_KERNEL);
@@ -133,20 +131,23 @@ static struct assoc_arr_gid_buf_t *allocate_assoc_arr_buf_gid(void) {
 	return arr;
 }
 
-static void free_assoc_arr_buf_gid(void) {
+static void free_assoc_arr_buf_gid(void)
+{
 	int i;
-	for (i = 0; i < buffers->n; i++) {
+
+	for (i = 0; i < buffers->n; i++)
 		free_circular_buffer(buffers->buf_arr[i]);
-	}
+
 	kfree(buffers->buf_arr);
 	kfree(buffers->gid_arr);
 	kfree(buffers);
 }
 
 /* Function reallocates memory in assoc_arr_gid_buf_t for one new buffer.
-   Returns pointer to new buffer on success, NULL on failure.
-*/
-static struct circular_buffer_t *add_new_buffer(kgid_t gid) {
+ *   Returns pointer to new buffer on success, NULL on failure.
+ */
+static struct circular_buffer_t *add_new_buffer(kgid_t gid)
+{
 	struct circular_buffer_t **tmp_buf_arr;
 	kgid_t *tmp_gid_arr;
 	size_t new_size = ((buffers->n) + 1);
@@ -173,12 +174,14 @@ static struct circular_buffer_t *add_new_buffer(kgid_t gid) {
 }
 
 /* Finds struct circular_buffer_t in assoc_arr_gid_buf_t by kgid_t.
-   Returns pointer to struct circular_buffer_t if found, NULL if not.
-*/
-static struct circular_buffer_t *find_buffer(kgid_t gid) {
+ *  Returns pointer to struct circular_buffer_t if found, NULL if not.
+ */
+static struct circular_buffer_t *find_buffer(kgid_t gid)
+{
 	int i;
+
 	for (i = 0; i < buffers->n; i++) {
-		if (gid_cmp((void*)&gid, (void*)&buffers->gid_arr[i]) == 0) {
+		if (gid_cmp((void *)&gid, (void *)&buffers->gid_arr[i]) == 0) {
 			pr_alert("Found matching kgid! At index %d\n", i);
 			return buffers->buf_arr[i];
 		}
@@ -319,19 +322,19 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 static int pipe_open(struct inode *i, struct file *f)
 {
 	kgid_t gid = f->f_cred->egid;
+	struct circular_buffer_t *tmp = find_buffer(gid);
+
 	pr_alert("my_pipe open\n");
 	pr_alert("Egid: %lu\n", gid);
-	// pr_alert("Sgid: %lu\n", f->f_cred->sgid);
-	// pr_alert("Gid: %lu\n", f->f_cred->gid);
-	// int j;
-	// for(j = 0; j < f->f_cred->group_info->ngroups; j++)
-	// {
-	// 	pr_alert("Group info gid[%d]: %lu\n", j, f->f_cred->group_info->gid[j]);
-	// }
-	struct circular_buffer_t *tmp = find_buffer(gid);
+	//pr_alert("Sgid: %lu\n", f->f_cred->sgid);
+	//pr_alert("Gid: %lu\n", f->f_cred->gid);
+	//int j;
+	//for(j = 0; j < f->f_cred->group_info->ngroups; j++) {
+	//	pr_alert("Group info gid[%d]: %lu\n", j, f->f_cred->group_info->gid[j]);
+	//}
 	if (tmp == NULL) {
 		pr_alert("Buffer not found. Adding buffer.\n");
-		tmp = add_new_buffer(gid);
+		add_new_buffer(gid);
 	}
 
 	return 0;
@@ -348,7 +351,7 @@ static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 	struct circular_buffer_t *tmp;
 	struct circular_buffer_t *circ_buf = find_buffer(f->f_cred->egid);
 
-	int res;
+	int res, i;
 
 	pr_alert("my_pipe ioctl; cmd is %d, arg is %lu\n", cmd, arg);
 
@@ -375,8 +378,13 @@ static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 
 		tmp = allocate_circular_buffer(arg);
 
-		free_circular_buffer(circ_buf);
-		circ_buf = tmp;
+		for (i = 0; i < buffers->n; i++) {
+			if (buffers->buf_arr[i] == circ_buf) {
+				buffers->buf_arr[i] = tmp;
+				free_circular_buffer(circ_buf);
+			}
+		}
+
 		pr_alert("Buffer capacity changed to %lu\n", arg);
 		mutex_unlock(&mutex);
 		return 0;
