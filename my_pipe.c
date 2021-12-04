@@ -213,7 +213,6 @@ static struct circular_buffer_t *find_buffer(kgid_t gid)
 		mutex_unlock(&assoc_arr_mutex);
 		return NULL;
 	}
-	pr_alert("1\n");
 
 	for (i = 0; i < buffers->n; i++) {
 		if (gid_cmp((void *)&gid, (void *)&buffers->gid_arr[i]) == 0) {
@@ -257,7 +256,7 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 
 			wake_up(&circ_buf->queue);
 			mutex_unlock(&circ_buf->lock);
-			res = wait_event_interruptible_exclusive(circ_buf->queue,
+			res = wait_event_interruptible(circ_buf->queue,
 				circ_buf->bytes_avail != circ_buf->size);
 			if (res == -ERESTARTSYS) {
 				pr_err("Sleep interrupted with return value %d\n", res);
@@ -328,7 +327,7 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 
 			wake_up(&circ_buf->queue);
 			mutex_unlock(&circ_buf->lock);
-			res = wait_event_interruptible_exclusive(circ_buf->queue, circ_buf->bytes_avail > 0);
+			res = wait_event_interruptible(circ_buf->queue, circ_buf->bytes_avail > 0);
 			if (res == -ERESTARTSYS) {
 				pr_err("Sleep interrupted with return value %d\n", res);
 				return written_bytes_total;
@@ -451,8 +450,6 @@ static int __init pipe_init(void)
 	}
 	pr_alert("my_pipe assigned major %d\n", major);
 
-	//TODO: check result
-	//circular_buffer = allocate_circular_buffer(1000);
 	buffers = allocate_assoc_arr_buf_gid();
 	if (buffers == NULL) {
 		pr_err("Could not allocate_assoc_arr_buf_gid, exiting");
