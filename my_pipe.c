@@ -9,7 +9,6 @@
 #include <linux/mutex.h>
 #include <linux/types.h>
 #include <linux/cred.h>
-
 #include <uapi/asm-generic/ioctl.h>
 
 #include "my_pipe.h"
@@ -404,6 +403,11 @@ static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 
 		if (circ_buf == NULL) {
 			pr_err("Could not allocate requested circular buffer in ioctl\n");
+			return -EINVAL;
+		}
+
+		if (arg == 0) {
+			pr_err("Arr is 0\n");
 			return -EINVAL;
 		}
 
