@@ -231,14 +231,17 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 	//struct circular_buffer_t *circ_buf = find_buffer(f->f_cred->egid);
 	struct circular_buffer_t *circ_buf = (struct circular_buffer_t *) f->private_data;
 	char *tmp_buf = kmalloc(count, GFP_KERNEL);
-	//TODO: check memory allocation
 	ssize_t read_bytes_total = 0;
 	unsigned long copied; //number of bytes copied to user
 	int res;
 
+	if (tmp_buf == NULL) {
+		pr_err("Could not allocate tmp_buf in read\n");
+		return -1;
+	}
+
 	pr_alert("my_pipe read %lu bytes\n", count);
 	pr_alert("Locking mutex");
-	//TODO: check return values in all locks
 	res = mutex_lock_interruptible(&circ_buf->lock);
 	if (res != 0) {
 		pr_err("Mutex interrupted with return value %d\n", res);
@@ -294,10 +297,14 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 	//struct circular_buffer_t *circ_buf = find_buffer(f->f_cred->egid);
 	struct circular_buffer_t *circ_buf = (struct circular_buffer_t *) f->private_data;
 	char *tmp_buf = kmalloc(count, GFP_KERNEL);
-	//TODO: check memory allocation
 	unsigned long copied = copy_from_user(tmp_buf, buf, count);
 	ssize_t written_bytes_total = 0;
 	int res;
+
+	if (tmp_buf == NULL) {
+		pr_err("Could not allocate tmp_buf in read\n");
+		return -1;
+	}
 
 	pr_alert("my_pipe write %lu bytes\n", count);
 	//pr_alert("Egid: %d\n", f->f_cred->egid);
@@ -310,7 +317,6 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 	pr_info("write from user: %s\n", tmp_buf);
 
 	pr_alert("Locking mutex");
-	//TODO: check return values in all locks
 	res = mutex_lock_interruptible(&circ_buf->lock);
 	if (res != 0) {
 		pr_err("Mutex interrupted with return value %d\n", res);
@@ -367,6 +373,8 @@ static int pipe_open(struct inode *i, struct file *f)
 	if (tmp == NULL) {
 		pr_alert("Buffer not found. Adding buffer.\n");
 		tmp = add_new_buffer(gid);
+		if (tmp == NULL)
+			return -1;
 	}
 	f->private_data = (void *) tmp;
 
@@ -413,6 +421,10 @@ static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 		}
 
 		tmp = allocate_circular_buffer(arg);
+		if (tmp == NULL) {
+			pr_err("Could not allocate circular_buffer_t\n");
+			return -EINVAL;
+		}
 
 		for (i = 0; i < buffers->n; i++) {
 			if (buffers->buf_arr[i] == circ_buf) {
@@ -453,7 +465,7 @@ static int __init pipe_init(void)
 	buffers = allocate_assoc_arr_buf_gid();
 	if (buffers == NULL) {
 		pr_err("Could not allocate_assoc_arr_buf_gid, exiting");
-		//TODO: crash module?
+		return -1;
 	}
 	return 0;
 }
