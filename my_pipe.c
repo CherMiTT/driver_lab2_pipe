@@ -228,7 +228,8 @@ static struct circular_buffer_t *find_buffer(kgid_t gid)
 static ssize_t pipe_read(struct file *f, char __user *buf,
 	size_t count, loff_t *offset)
 {
-	struct circular_buffer_t *circ_buf = find_buffer(f->f_cred->egid);
+	//struct circular_buffer_t *circ_buf = find_buffer(f->f_cred->egid);
+	struct circular_buffer_t *circ_buf = (struct circular_buffer_t *) f->private_data;
 	char *tmp_buf = kmalloc(count, GFP_KERNEL);
 	//TODO: check memory allocation
 	ssize_t read_bytes_total = 0;
@@ -290,7 +291,8 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 static ssize_t pipe_write(struct file *f, const char __user *buf,
 	size_t count, loff_t *offset)
 {
-	struct circular_buffer_t *circ_buf = find_buffer(f->f_cred->egid);
+	//struct circular_buffer_t *circ_buf = find_buffer(f->f_cred->egid);
+	struct circular_buffer_t *circ_buf = (struct circular_buffer_t *) f->private_data;
 	char *tmp_buf = kmalloc(count, GFP_KERNEL);
 	//TODO: check memory allocation
 	unsigned long copied = copy_from_user(tmp_buf, buf, count);
@@ -298,7 +300,7 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 	int res;
 
 	pr_alert("my_pipe write %lu bytes\n", count);
-	pr_alert("Egid: %d\n", f->f_cred->egid);
+	//pr_alert("Egid: %d\n", f->f_cred->egid);
 	if (copied != 0) {
 		pr_err("Couldn't copy buffer from user in write\n");
 		pr_err("Returning 0 to user.\n");
@@ -361,17 +363,12 @@ static int pipe_open(struct inode *i, struct file *f)
 	struct circular_buffer_t *tmp = find_buffer(gid);
 
 	pr_alert("my_pipe open\n");
-	pr_alert("Egid: %lu\n", gid);
-	//pr_alert("Sgid: %lu\n", f->f_cred->sgid);
-	//pr_alert("Gid: %lu\n", f->f_cred->gid);
-	//int j;
-	//for(j = 0; j < f->f_cred->group_info->ngroups; j++) {
-	//	pr_alert("Group info gid[%d]: %lu\n", j, f->f_cred->group_info->gid[j]);
-	//}
+	//pr_alert("Egid: %lu\n", gid);
 	if (tmp == NULL) {
 		pr_alert("Buffer not found. Adding buffer.\n");
-		add_new_buffer(gid);
+		tmp = add_new_buffer(gid);
 	}
+	f->private_data = (void *) tmp;
 
 	return 0;
 }
@@ -379,13 +376,15 @@ static int pipe_open(struct inode *i, struct file *f)
 static int pipe_release(struct inode *i, struct file *f)
 {
 	pr_alert("my_pipe release\n");
+	pr_alert("buffer address: %p\n", f->private_data);
 	return 0;
 }
 
 static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
 	struct circular_buffer_t *tmp;
-	struct circular_buffer_t *circ_buf = find_buffer(f->f_cred->egid);
+	//struct circular_buffer_t *circ_buf = find_buffer(f->f_cred->egid);
+	struct circular_buffer_t *circ_buf = (struct circular_buffer_t *) f->private_data;
 
 	int res, i;
 
@@ -418,6 +417,7 @@ static long pipe_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 		for (i = 0; i < buffers->n; i++) {
 			if (buffers->buf_arr[i] == circ_buf) {
 				buffers->buf_arr[i] = tmp;
+				f->private_data = (void *) tmp;
 				free_circular_buffer(circ_buf);
 			}
 		}
