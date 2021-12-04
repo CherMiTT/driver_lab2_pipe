@@ -250,7 +250,7 @@ static ssize_t pipe_read(struct file *f, char __user *buf,
 	while (read_bytes_total < count) {
 		ssize_t read_bytes_iter = read_from_circular_buffer(circ_buf,
 			count - read_bytes_total, tmp_buf + read_bytes_total);
-		//TODO: read_bytes_iter used only for debug, either use or remove
+		//TODO: read_bytes_iter used only for debug, either use or remove it
 		read_bytes_total += read_bytes_iter;
 		if (read_bytes_total < count) {
 			pr_alert("Read %lu bytes this iteration, %lu bytes total.\n\t"
@@ -325,7 +325,7 @@ static ssize_t pipe_write(struct file *f, const char __user *buf,
 	while (written_bytes_total < count) {
 		ssize_t written_bytes_iter = write_to_circular_buffer(circ_buf,
 			count - written_bytes_total, tmp_buf + written_bytes_total);
-		//TODO: written_bytes_iter is used only for debug, either use or remove
+		//TODO: written_bytes_iter is used only for debug, either use or remove it
 		written_bytes_total += written_bytes_iter;
 		if (written_bytes_total < count) {
 			pr_alert("Written %lu bytes this iteration, %lu bytes total.\n\t"
